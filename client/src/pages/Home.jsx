@@ -1,0 +1,111 @@
+import React, { useState } from 'react';
+import { useAuth } from '@clerk/clerk-react';
+import CameraCapture from '../components/CameraCapture';
+import CarResult from '../components/CarResult';
+
+export default function Home() {
+  const { getToken } = useAuth();
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [loadingSpecs, setLoadingSpecs] = useState(false);
+  const [error, setError] = useState(null);
+
+  function handleCapture(file) {
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setResult(null);
+    setError(null);
+  }
+
+  async function pollForSpecs(id, token) {
+    setLoadingSpecs(true);
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await fetch(`/api/specs/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) break;
+      const { specs } = await res.json();
+      if (specs) {
+        setResult((prev) => ({ ...prev, specs }));
+        setLoadingSpecs(false);
+        return;
+      }
+    }
+    setLoadingSpecs(false);
+  }
+
+  async function handleIdentify() {
+    if (!selectedFile) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const token = await getToken();
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      const res = await fetch('/api/identify', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to identify car');
+
+      setResult(data);
+      setLoading(false);
+
+      if (data.id) pollForSpecs(data.id, token);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="max-w-xl mx-auto">
+      <h1 className="text-2xl font-bold text-white mb-6">Identify a Car</h1>
+
+      <CameraCapture onCapture={handleCapture} />
+
+      {previewUrl && (
+        <div className="mt-4">
+          <img src={previewUrl} alt="Selected car" className="w-full rounded-xl object-cover max-h-64" />
+        </div>
+      )}
+
+      {previewUrl && !loading && !result && (
+        <button
+          onClick={handleIdentify}
+          className="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+        >
+          Identify Car
+        </button>
+      )}
+
+      {loading && (
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm">Identifying car...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-6">
+          <CarResult {...result} loadingSpecs={loadingSpecs} />
+        </div>
+      )}
+    </div>
+  );
+}
