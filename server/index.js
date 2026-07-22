@@ -6,7 +6,7 @@ const { clerkMiddleware } = require('@clerk/express');
 
 const identifyRouter = require('./routes/identify');
 const historyRouter = require('./routes/history');
-const specsRouter = require('./routes/specs');
+const streamRouter = require('./routes/stream');
 
 const app = express();
 
@@ -16,7 +16,7 @@ app.use(express.json());
 
 app.use('/api/identify', identifyRouter);
 app.use('/api/history', historyRouter);
-app.use('/api/specs', specsRouter);
+app.use('/api/stream', streamRouter);
 
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(__dirname, '../client/dist');

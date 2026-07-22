@@ -15,127 +15,68 @@ function parseJSON(text) {
   return JSON.parse(cleaned);
 }
 
-async function identifyCar(imageBuffer, mimeType) {
+async function identifyCar(imageBuffer) {
   const resized = await resizeForClaude(imageBuffer);
   const base64 = resized.toString('base64');
 
   const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-opus-4-6',
     max_tokens: 256,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
-          },
-          {
-            type: 'text',
-            text: 'Identify this car. Return ONLY valid JSON: { "make": string, "model": string, "year": string, "confidence": "high"|"medium"|"low", "notes": string }. Year is a 4-digit string or range like "2018-2020".',
-          },
-        ],
-      },
-    ],
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+        { type: 'text', text: 'Identify this car. Return ONLY valid JSON: { "make": string, "model": string, "year": string, "confidence": "high"|"medium"|"low", "notes": string }. Year is 4-digit string or range like "2018-2020".' },
+      ],
+    }],
   });
 
-  let parsed;
-  try {
-    parsed = parseJSON(response.content[0].text);
-  } catch {
-    throw new Error('Could not identify car in image');
-  }
-
-  if (!parsed.make || !parsed.model) {
-    throw new Error('Could not identify car in image');
-  }
-
+  const parsed = parseJSON(response.content[0].text);
+  if (!parsed.make || !parsed.model) throw new Error('Could not identify car in image');
   return parsed;
 }
 
-async function getCarSpecs(make, model, year) {
+async function getSpecs(make, model, year, imageBuffer) {
+  const base64 = imageBuffer ? (await resizeForClaude(imageBuffer)).toString('base64') : null;
+  const content = base64
+    ? [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+        { type: 'text', text: `This is a ${year} ${make} ${model}. Use the image to identify the exact trim/variant and return accurate technical specs. Return ONLY valid JSON:\n{"model_body":s,"model_engine_name":s,"model_engine_cc":s,"model_engine_cyl":s,"model_engine_type":s,"model_engine_power_ps":s,"model_engine_power_rpm":s,"model_engine_torque_nm":s,"model_engine_torque_rpm":s,"model_engine_fuel":s,"model_engine_compression":s,"model_engine_bore_mm":s,"model_engine_stroke_mm":s,"model_engine_valves_per_cyl":s,"model_engine_valvetrain":s,"model_engine_aspiration":s,"model_turbo_type":s,"model_turbo_pressure_bar":s,"model_supercharger":s,"model_drive":s,"model_transmission_type":s,"model_transmission_gears":s,"model_seats":s,"model_doors":s,"model_weight_kg":s,"model_weight_distribution":s,"model_length_mm":s,"model_width_mm":s,"model_height_mm":s,"model_wheelbase_mm":s,"model_track_front_mm":s,"model_track_rear_mm":s,"model_ground_clearance_mm":s,"model_top_speed_kph":s,"model_0_to_100_kph":s,"model_0_to_200_kph":s,"model_fuel_consumption_l100km_city":s,"model_fuel_consumption_l100km_highway":s,"model_fuel_tank_l":s,"model_brake_front":s,"model_brake_rear":s,"model_suspension_front":s,"model_suspension_rear":s,"model_tire_front":s,"model_tire_rear":s,"model_production_years":s,"model_units_produced":s}\nReplace s with string value or null.` },
+      ]
+    : `Technical specs for ${year} ${make} ${model}. Return ONLY valid JSON:\n{"model_body":s,"model_engine_name":s,"model_engine_cc":s,"model_engine_cyl":s,"model_engine_type":s,"model_engine_power_ps":s,"model_engine_power_rpm":s,"model_engine_torque_nm":s,"model_engine_torque_rpm":s,"model_engine_fuel":s,"model_engine_compression":s,"model_engine_bore_mm":s,"model_engine_stroke_mm":s,"model_engine_valves_per_cyl":s,"model_engine_valvetrain":s,"model_engine_aspiration":s,"model_turbo_type":s,"model_turbo_pressure_bar":s,"model_supercharger":s,"model_drive":s,"model_transmission_type":s,"model_transmission_gears":s,"model_seats":s,"model_doors":s,"model_weight_kg":s,"model_weight_distribution":s,"model_length_mm":s,"model_width_mm":s,"model_height_mm":s,"model_wheelbase_mm":s,"model_track_front_mm":s,"model_track_rear_mm":s,"model_ground_clearance_mm":s,"model_top_speed_kph":s,"model_0_to_100_kph":s,"model_0_to_200_kph":s,"model_fuel_consumption_l100km_city":s,"model_fuel_consumption_l100km_highway":s,"model_fuel_tank_l":s,"model_brake_front":s,"model_brake_rear":s,"model_suspension_front":s,"model_suspension_rear":s,"model_tire_front":s,"model_tire_rear":s,"model_production_years":s,"model_units_produced":s}\nReplace s with string value or null.`;
+
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: `Give me the full technical breakdown for a ${year} ${make} ${model}. Return ONLY valid JSON with this exact structure:
-{
-  "model_body": string,
-  "model_engine_name": string,
-  "model_engine_cc": string,
-  "model_engine_cyl": string,
-  "model_engine_type": string,
-  "model_engine_power_ps": string,
-  "model_engine_power_rpm": string,
-  "model_engine_torque_nm": string,
-  "model_engine_torque_rpm": string,
-  "model_engine_fuel": string,
-  "model_engine_compression": string,
-  "model_engine_bore_mm": string,
-  "model_engine_stroke_mm": string,
-  "model_engine_valves_per_cyl": string,
-  "model_engine_valvetrain": string,
-  "model_engine_aspiration": string,
-  "model_turbo_type": string,
-  "model_turbo_pressure_bar": string,
-  "model_supercharger": string,
-  "model_drive": string,
-  "model_transmission_type": string,
-  "model_transmission_gears": string,
-  "model_seats": string,
-  "model_doors": string,
-  "model_weight_kg": string,
-  "model_weight_distribution": string,
-  "model_length_mm": string,
-  "model_width_mm": string,
-  "model_height_mm": string,
-  "model_wheelbase_mm": string,
-  "model_track_front_mm": string,
-  "model_track_rear_mm": string,
-  "model_ground_clearance_mm": string,
-  "model_top_speed_kph": string,
-  "model_0_to_100_kph": string,
-  "model_0_to_200_kph": string,
-  "model_fuel_consumption_l100km_city": string,
-  "model_fuel_consumption_l100km_highway": string,
-  "model_fuel_tank_l": string,
-  "model_brake_front": string,
-  "model_brake_rear": string,
-  "model_suspension_front": string,
-  "model_suspension_rear": string,
-  "model_tire_front": string,
-  "model_tire_rear": string,
-  "model_production_years": string,
-  "model_units_produced": string,
-  "fun_facts": [string, string, string],
-  "modifications": {
-    "budget": [
-      { "name": string, "cost_usd": string, "performance_gain": string, "description": string }
-    ],
-    "mid_range": [
-      { "name": string, "cost_usd": string, "performance_gain": string, "description": string }
-    ],
-    "high_end": [
-      { "name": string, "cost_usd": string, "performance_gain": string, "description": string }
-    ]
-  }
-}
-Use null for values you are not confident about. fun_facts should be 3 genuinely interesting facts about this specific car — racing history, engineering innovations, records broken, celebrity owners, cultural impact, quirks, etc.
-For modifications: budget = under $500, mid_range = $500–$5000, high_end = $5000+. Include 3 mods per tier, specific to this car's platform. performance_gain should be concrete (e.g. "+15 hp", "+20% throttle response", "-0.3s 0-100").`,
-      },
-    ],
+    model: 'claude-opus-4-6',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content }],
   });
-
-  const text = response.content[0].text;
-  try {
-    return parseJSON(text);
-  } catch (err) {
-    console.error('Specs parse error:', err.message);
-    console.error('Raw response:', text.substring(0, 300));
-    return null;
-  }
+  return parseJSON(response.content[0].text);
 }
 
-module.exports = { identifyCar, getCarSpecs };
+async function getMods(make, model, year) {
+  const response = await client.messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: `Suggested modifications for ${year} ${make} ${model}. Return ONLY valid JSON:
+{"budget":[{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s}],"mid_range":[{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s}],"high_end":[{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s},{"name":s,"cost_usd":s,"performance_gain":s,"description":s}]}
+Replace s with string. budget=under $500, mid_range=$500-$5000, high_end=$5000+. performance_gain must be concrete e.g. "+15 hp".`,
+    }],
+  });
+  return parseJSON(response.content[0].text);
+}
+
+async function getFunFacts(make, model, year) {
+  const response = await client.messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `3 genuinely interesting fun facts about the ${year} ${make} ${model}. Racing history, records, engineering quirks, cultural impact, celebrity owners etc. Return ONLY valid JSON: {"fun_facts":[string,string,string]}`,
+    }],
+  });
+  return parseJSON(response.content[0].text).fun_facts;
+}
+
+module.exports = { identifyCar, getSpecs, getMods, getFunFacts };

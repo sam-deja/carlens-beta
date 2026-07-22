@@ -9,6 +9,9 @@ export default function Home() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [specs, setSpecs] = useState(null);
+  const [mods, setMods] = useState(null);
+  const [funFacts, setFunFacts] = useState(null);
   const [loadingSpecs, setLoadingSpecs] = useState(false);
   const [error, setError] = useState(null);
 
@@ -16,25 +19,44 @@ export default function Home() {
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setResult(null);
+    setSpecs(null);
+    setMods(null);
+    setFunFacts(null);
     setError(null);
   }
 
-  async function pollForSpecs(id, token) {
+  async function streamDetails(id, token) {
     setLoadingSpecs(true);
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const res = await fetch(`/api/specs/${id}`, {
+    try {
+      const response = await fetch(`/api/stream/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) break;
-      const { specs } = await res.json();
-      if (specs) {
-        setResult((prev) => ({ ...prev, specs }));
-        setLoadingSpecs(false);
-        return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { type, data } = JSON.parse(line.slice(6));
+            if (type === 'specs') setSpecs(data);
+            if (type === 'mods') setMods(data);
+            if (type === 'fun_facts') setFunFacts(data);
+          } catch {}
+        }
       }
+    } catch (err) {
+      console.error('Stream error:', err);
+    } finally {
+      setLoadingSpecs(false);
     }
-    setLoadingSpecs(false);
   }
 
   async function handleIdentify() {
@@ -42,6 +64,9 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setSpecs(null);
+    setMods(null);
+    setFunFacts(null);
 
     try {
       const token = await getToken();
@@ -60,7 +85,7 @@ export default function Home() {
       setResult(data);
       setLoading(false);
 
-      if (data.id) pollForSpecs(data.id, token);
+      if (data.id) streamDetails(data.id, token);
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -103,7 +128,13 @@ export default function Home() {
 
       {result && (
         <div className="mt-6">
-          <CarResult {...result} loadingSpecs={loadingSpecs} />
+          <CarResult
+            {...result}
+            specs={specs}
+            mods={mods}
+            funFacts={funFacts}
+            loadingDetails={loadingSpecs}
+          />
         </div>
       )}
     </div>
