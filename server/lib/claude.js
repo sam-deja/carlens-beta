@@ -1,7 +1,10 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const OpenAI = require('openai');
 const sharp = require('sharp');
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = anthropic; // used by specs/mods/fun_facts
 
 async function resizeForClaude(buffer) {
   return sharp(buffer)
@@ -19,19 +22,19 @@ async function identifyCar(imageBuffer) {
   const resized = await resizeForClaude(imageBuffer);
   const base64 = resized.toString('base64');
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-6',
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
     max_tokens: 256,
     messages: [{
       role: 'user',
       content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'high' } },
         { type: 'text', text: 'Identify this car. Return ONLY valid JSON: { "make": string, "model": string, "year": string, "confidence": "high"|"medium"|"low", "notes": string }. Year is 4-digit string or range like "2018-2020".' },
       ],
     }],
   });
 
-  const parsed = parseJSON(response.content[0].text);
+  const parsed = parseJSON(response.choices[0].message.content);
   if (!parsed.make || !parsed.model) throw new Error('Could not identify car in image');
   return parsed;
 }
